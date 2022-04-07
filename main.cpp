@@ -2,6 +2,8 @@
 #include <fstream>
 #include <queue>
 
+#define DEBUG
+
 #include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
 #include "CGAL/Point_2.h"
 #include "CGAL/Arrangement_on_surface_2.h"
@@ -12,6 +14,7 @@ typedef CGAL::Exact_predicates_inexact_constructions_kernel Kernel;
 using Vertex_handle = CGAL::Arrangement_2<CGAL::Arr_segment_traits_2<Kernel>>::Vertex_handle;
 using Vertex = CGAL::Arrangement_2<CGAL::Arr_segment_traits_2<Kernel>>::Vertex;
 using Half_edge = CGAL::Arrangement_2<CGAL::Arr_segment_traits_2<Kernel>>::Halfedge;
+
 
 typedef int                                           Number_type;
 typedef CGAL::Arr_segment_traits_2<Kernel>            Traits_2;
@@ -35,7 +38,19 @@ enum class event_type {
     merge
 };
 
+void print_edge(Halfedge_handle edge){
+    std::cerr << edge->source()->point().x() << " " << edge->source()->point().y() << " -> ";
+    std::cerr << edge->target()->point().x() << " " << edge->target()->point().y() << "  \n";
+}
+void print_vertex(Vertex_handle v){
+    std::cerr << v->point().x() << " " << v->point().y() << "  \n";
+}
+void print_point(Point_2 v){
+    std::cerr << v.x() << " " << v.y() << "  \n";
+}
+
 struct vertex_event {
+    event_type type;
     Vertex_handle vertex_handle;
     Halfedge_handle next_edge;
     Halfedge_handle prev_edge;
@@ -87,7 +102,12 @@ public:
 
     EdgeStructure() : edges((EdgeOrder(sl))) {}
 
+    bool empty() const {
+        return edges.empty();
+    }
+
     void insert(const Halfedge_handle& e){
+        sl = Line_2(e->source()->point(), Direction_2(0, 1));
         edges.insert(e);
     }
     void erase(const Halfedge_handle& e){
@@ -115,11 +135,9 @@ public:
 
 };
 
-//Stampa la DCEL in un formato leggibile
 void print_dcel(CGAL::Arrangement_2<CGAL::Arr_segment_traits_2<Kernel>>& dcel){
 
-
-    std::cout << "Vertici\n";
+    std::cout << "Vertices\n";
     for(Vertex_handle& v : dcel.vertex_handles()){
         std::cout << v->point().x() << " " << v->point().y() << "\n";
     }
@@ -131,7 +149,7 @@ void print_dcel(CGAL::Arrangement_2<CGAL::Arr_segment_traits_2<Kernel>>& dcel){
             continue;
         }
 
-        std::cout << "Faccia: " << face_index++ << "\n";
+        std::cout << "Face: " << face_index++ << "\n";
         auto edge_circulator = face->outer_ccb();
         do {
             auto he = edge_circulator;
@@ -140,112 +158,9 @@ void print_dcel(CGAL::Arrangement_2<CGAL::Arr_segment_traits_2<Kernel>>& dcel){
         } while (++edge_circulator != face->outer_ccb());
     }
 
-    std::cout << "Half-edges\n";
+    std::cout << "Edges\n";
     for(const auto& he : dcel.edge_handles()){
         std::cout << he->source()->point().x() << " " << he->source()->point().y() << " -> " << he->target()->point().x() << " " << he->target()->point().y() << "\n";
-    }
-
-}
-
-//Leggere e stampare la DCEL utilizzando lo standard input (in formato OFF)
-CGAL::Arrangement_2<CGAL::Arr_segment_traits_2<Kernel>> read_dcel(){
-
-    CGAL::Arrangement_2<CGAL::Arr_segment_traits_2<Kernel>> dcel;
-
-    std::string off_file_start_token = "OFF";
-    unsigned int num_vertices = 0;
-    unsigned int num_faces = 0;
-    unsigned int num_edges = 0;
-
-    //Saltiamo il token che segnala l'inizio di un file OFF ("OFF")
-    std::getline(std::cin, off_file_start_token);
-
-    std::cin >> num_vertices >> num_faces >> num_edges;
-
-    std::vector<Kernel::Point_2> vertices;
-    std::vector<Kernel::Point_2> face_vertices;
-
-    vertices.reserve(num_vertices);
-
-    for(int vertex_index = 0; vertex_index != num_vertices; ++vertex_index){
-        double x = 0.0;
-        double y = 0.0;
-
-        std::cin >> x >> y;
-
-        vertices.emplace_back(x, y);
-    }
-
-    //Una sola faccia nel poligono semplice
-    unsigned int num_vertices_in_face = 0;
-    std::cin >> num_vertices_in_face;
-    face_vertices.reserve(num_vertices_in_face);
-
-    for(int i = 0; i != num_vertices_in_face; ++i){
-        unsigned int face_vertex_index = 0;
-        std::cin >> face_vertex_index;
-        face_vertices.push_back(vertices[face_vertex_index]);
-    }
-
-    //Identifichiamo il vertice di partenza p0
-    Point_2 p0 = *face_vertices.begin();
-    Vertex_handle vh0 = dcel.insert_in_face_interior(p0, dcel.unbounded_face());
-
-    //Il vertice p1 sarà l'ultimo vertice aggiunto alla dcel
-    Point_2 p1 = p0;
-    Vertex_handle vh1 = vh0;
-
-    for(int i = 1; i < face_vertices.size(); ++i){
-        Point_2 p = face_vertices[i];
-        Vertex_handle vh = dcel.insert_in_face_interior(p, dcel.unbounded_face());
-
-        dcel.insert_at_vertices(Segment_2(p1, p), vh1, vh);
-
-        p1 = p;
-        vh1 = vh;
-    }
-
-    dcel.insert_at_vertices(Segment_2(p0, p1), vh1, vh0);
-
-    return dcel;
-}
-void write_dcel(CGAL::Arrangement_2<CGAL::Arr_segment_traits_2<Kernel>>& dcel){
-
-    const std::string off_file_start_token = "OFF";
-    std::cout << off_file_start_token << "\n";
-
-    unsigned int num_vertices = dcel.number_of_vertices();
-    unsigned int num_faces = dcel.number_of_faces();
-    unsigned int num_edges = dcel.number_of_edges();
-
-    std::cout << num_vertices << " " << num_faces << " " << num_edges << "\n";
-
-    //Mappiamo ogni indice al suo vertice
-    std::map<Point_2, int> vertices;
-    int vertex_index = 0;
-    for(const auto& vh : dcel.vertex_handles()){
-        vertices[vh->point()] = vertex_index;
-        std::cout << vh->point().x() << " " << vh->point().y() << "\n";
-        vertex_index += 1;
-    }
-
-    for(const auto& face : dcel.face_handles()){
-        if(face->is_unbounded()) continue;
-
-        int n_of_edges_for_face = 0;
-        auto edge_circulator = face->outer_ccb();
-        do {
-            n_of_edges_for_face += 1;
-        } while (++edge_circulator != face->outer_ccb());
-
-        std::cout << n_of_edges_for_face << " ";
-
-        edge_circulator = face->outer_ccb();
-        do {
-            std::cout << vertices[edge_circulator->source()->point()] << " ";
-        } while (++edge_circulator != face->outer_ccb());
-
-        std::cout << "\n";
     }
 
 }
@@ -268,10 +183,12 @@ void remove(const Halfedge_handle& e,
     if(types.contains(u) && types.at(u) == event_type::merge){
         //Aggiungiamo la diagonale da u a v
         const Segment_2 segment(u->point(), v->point());
+#ifdef DEBUG
         std::cerr << "Insert diagonal ";
         std::cerr << u->point().x() << " " << u->point().y() << " -> ";
         std::cerr << v->point().x() << " " << v->point().y() << "";
         std::cerr << "\n";
+#endif
         dcel.insert_at_vertices(segment, u, v);
     }
 
@@ -285,22 +202,26 @@ void process(const Vertex_handle& v,
              CGAL::Arrangement_2<CGAL::Arr_segment_traits_2<Kernel>>& dcel){
 
     const auto b = sweep_line_edges.find_edge_underneath(e);
-
+#ifdef DEBUG
+    std::cerr << "Found edge ";
+    print_edge(b);
+#endif
     const auto& u = helpers.at(b);
     if(types.at(u) == event_type::merge || types.at(v) == event_type::split){
         //Aggiunta della diagonale uv
         const Segment_2 segment(u->point(), v->point());
+#ifdef DEBUG
         std::cerr << "Insert diagonal ";
         std::cerr << u->point().x() << " " << u->point().y() << " -> ";
         std::cerr << v->point().x() << " " << v->point().y() << "";
         std::cerr << "\n";
+#endif
         dcel.insert_at_vertices(segment, u, v);
     }
 
     helpers[b] = v;
 }
 
-//Procedura che identifica il tipo di evento relativo al vertice target di edge_handle
 event_type identify_event(const Point_2& prev_point, const Point_2& point, const Point_2& next_point){
 
     if (CGAL::lexicographically_xy_smaller(prev_point, point) &&
@@ -334,108 +255,81 @@ event_type identify_event(const Point_2& prev_point, const Point_2& point, const
 
 }
 
-void print_edge(Halfedge_handle edge){
-    std::cerr << edge->source()->point().x() << " " << edge->source()->point().y() << " -> ";
-    std::cerr << edge->target()->point().x() << " " << edge->target()->point().y() << "  \n";
-}
+void monotone_subdivision(CGAL::Arrangement_2<CGAL::Arr_segment_traits_2<Kernel>>& dcel, Face_handle f){
 
-void print_vertex(Vertex_handle v){
-    std::cerr << v->point().x() << " " << v->point().y() << "  \n";
-}
-
-void monotone_subdivision(CGAL::Arrangement_2<CGAL::Arr_segment_traits_2<Kernel>>& dcel){
-
-    //Per ogni vertice nella DCEL registriamo il tipo di evento
+    //For every vertex register the event types
     std::map<Vertex_const_handle, event_type> types;
 
     std::vector<vertex_event> vertex_events;
     vertex_events.reserve(dcel.number_of_vertices());
 
-    std::cout << dcel.number_of_faces() << "\n";
-    Face_handle f = (++dcel.faces_begin());
-
-    std::vector<Halfedge_handle> outer_edges;
     auto current = f->outer_ccb();
+    std::cout << "Next face\n";
     do {
-        Halfedge_handle he = current;
-        outer_edges.push_back(he);
-    }while (++current != f->outer_ccb());
+        auto edge_it = current;
 
-    std::vector<Halfedge_handle> inner_edges;
+        Halfedge_handle prev_handle = (++edge_it)->twin();
+        Halfedge_handle curr_handle = current->twin();
 
-    for(auto hi = f->holes_begin(); hi != f->holes_end(); ++hi){
-        auto current_inner = *hi;
-        do {
-            Halfedge_handle he = current_inner;
-            inner_edges.push_back(he);
-        }while (++current_inner != *hi);
-    }
-
-    //Identificazione degli eventi associati a ciascun vertice
-    //Per processare tutti i vertici una volta sola processiamo un edge alla volta
-    //tenendo come vertice la sorgente dell'edge
-    //Gli edge hanno puntatori ai vertici ma non viceversa
-    for(auto& edge_handle : outer_edges){
-        auto handle = edge_handle->twin();
-        auto edge = *(handle);
+        auto prev = *prev_handle;
+        auto edge = *curr_handle;
 
         auto vertex = edge.source();
         const auto next_vertex = edge.target();
-        const auto prev_vertex = edge.prev()->source();
+        const auto prev_vertex = prev.source();
         const auto point = vertex->point();
         const auto next_point = next_vertex->point();
         const auto prev_point = prev_vertex->point();
 
         const auto event_type = identify_event(prev_point, point, next_point);
 
-        vertex_events.emplace_back(
-                vertex,
-                handle->prev()->twin(),
-                handle->twin()
-        );
+        vertex_events.emplace_back(event_type, vertex, prev_handle->twin(), curr_handle->twin());
+#ifdef DEBUG
         std::cerr << "Outer edge \n";
         print_vertex(vertex);
-        print_edge(handle->prev()->twin());
-        print_edge(handle->twin());
-
+        print_edge(prev_handle->twin());
+        print_edge(curr_handle->twin());
+#endif
         types[vertex] = event_type;
-    }
+    } while (++current != f->outer_ccb());
 
-    for(auto& edge_handle : inner_edges){
-        auto inverse_handle = edge_handle;
+    for (auto hi = f->holes_begin(); hi != f->holes_end(); ++hi) {
+        auto current_inner = *hi;
+        do {
+            auto inverse_handle = current_inner;
+            auto prev_handle = inverse_handle;
 
-        auto edge = *(inverse_handle);
+            auto edge = *(inverse_handle);
 
-        auto vertex = edge.source();
-        const auto next_vertex = edge.target();
-        const auto prev_vertex = edge.prev()->source();
+            auto vertex = edge.source();
+            const auto next_vertex = edge.target();
+            const auto prev_vertex = (--prev_handle)->source();
 
-        const auto point = vertex->point();
-        const auto next_point = next_vertex->point();
-        const auto prev_point = prev_vertex->point();
+            const auto point = vertex->point();
+            const auto next_point = next_vertex->point();
+            const auto prev_point = prev_vertex->point();
 
-        const auto event_type = identify_event(next_point, point, prev_point);
+            const auto event_type = identify_event(next_point, point, prev_point);
 
-        vertex_events.emplace_back(
-                vertex,
-                inverse_handle,
-                inverse_handle->prev()
-        );
-        std::cerr << "Inner edges \n";
-        print_vertex(vertex);
-        print_edge(inverse_handle);
-        print_edge(inverse_handle->prev());
-
-        types[vertex] = event_type;
+            vertex_events.emplace_back(
+                    event_type,
+                    vertex,
+                    inverse_handle,
+                    inverse_handle->prev()
+            );
+            #ifdef DEBUG
+            std::cerr << "Inner edges \n";
+            print_vertex(vertex);
+            print_edge(inverse_handle);
+            print_edge(inverse_handle->prev());
+            #endif
+            types[vertex] = event_type;
+        } while (++current_inner != *hi);
     }
 
     //Ordiniamo gli eventi da sinistra a destra
     std::sort(vertex_events.begin(), vertex_events.end(), [](const auto& a, const auto& b){
         return CGAL::lexicographically_xy_smaller(a.vertex_handle->point(), b.vertex_handle->point());
-    });
-
-    std::for_each(vertex_events.begin(), vertex_events.end(), [](const vertex_event& e){
-        std::cout << e.vertex_handle->point().x() << " " << e.vertex_handle->point().y() << "\n";
     });
 
     std::map<Halfedge_const_handle, Vertex_handle> helpers;
@@ -444,62 +338,120 @@ void monotone_subdivision(CGAL::Arrangement_2<CGAL::Arr_segment_traits_2<Kernel>
     //Processiamo ciascun evento
     for(const auto& event : vertex_events) {
 
-        const auto& event_type = types[event.vertex_handle];
+        const auto event_type = event.type;
+
+#ifdef DEBUG
+        print_vertex(event.vertex_handle);
+#endif
 
         if (event_type == event_type::start) {
+#ifdef DEBUG
             std::cerr << "event_type::start\n";
             std::cerr << "Insert next edge ";
             print_edge(event.next_edge);
+#endif
             insert(event.next_edge, sweep_line_edges, helpers, types);
         }
         if (event_type == event_type::end) {
+#ifdef DEBUG
             std::cerr << "event_type::end\n";
             std::cerr << "Remove prev edge ";
             print_edge(event.prev_edge);
+#endif
             remove(event.prev_edge, event.vertex_handle, sweep_line_edges, helpers, types, dcel);
         }
         if (event_type == event_type::lower_regular) {
+#ifdef DEBUG
             std::cerr << "event_type::lower_regular\n";
             std::cerr << "Remove prev edge ";
             print_edge(event.prev_edge);
             std::cerr << "Insert next edge ";
             print_edge(event.next_edge);
+#endif
             remove(event.prev_edge, event.vertex_handle, sweep_line_edges, helpers, types, dcel);
             insert(event.next_edge, sweep_line_edges, helpers, types);
         }
         if (event_type == event_type::upper_regular) {
+#ifdef DEBUG
             std::cerr << "event_type::upper_regular\n";
             std::cerr << "Process next edge ";
             print_edge(event.next_edge);
+#endif
             process(event.vertex_handle, event.next_edge, sweep_line_edges, helpers, types, dcel);
         }
         if (event_type == event_type::split) {
+#ifdef DEBUG
             std::cerr << "event_type::split\n";
             std::cerr << "Process next edge ";
             print_edge(event.next_edge);
             std::cerr << "Insert next edge ";
             print_edge(event.next_edge);
+#endif
             process(event.vertex_handle, event.next_edge, sweep_line_edges, helpers, types, dcel);
             insert(event.next_edge, sweep_line_edges, helpers, types);
         }
         if (event_type == event_type::merge) {
+#ifdef DEBUG
             std::cerr << "event_type::merge\n";
             std::cerr << "Remove prev edge ";
             print_edge(event.prev_edge);
+#endif
             remove(event.prev_edge, event.vertex_handle, sweep_line_edges, helpers, types, dcel);
+#ifdef DEBUG
             std::cerr << "Process next edge ";
             print_edge(event.next_edge);
+#endif
             process(event.vertex_handle, event.next_edge, sweep_line_edges, helpers, types, dcel);
         }
-
     }
 
 }
 
-int main() {
+CGAL::Arrangement_2<CGAL::Arr_segment_traits_2<Kernel>> example_1(){
+    CGAL::Arrangement_2<CGAL::Arr_segment_traits_2<Kernel>> dcel;
 
-    //auto dcel = read_dcel();
+    auto v1 = dcel.insert_in_face_interior(Point_2(1.0, 2.0), dcel.unbounded_face());
+    auto v2 = dcel.insert_in_face_interior(Point_2(3.0, 1.0), dcel.unbounded_face());
+    auto v3 = dcel.insert_in_face_interior(Point_2(2.0, 2.0), dcel.unbounded_face());
+    auto v4 = dcel.insert_in_face_interior(Point_2(3.0, 3.0), dcel.unbounded_face());
 
+    dcel.insert_at_vertices(Segment_2(v1->point(), v2->point()), v1, v2);
+    dcel.insert_at_vertices(Segment_2(v2->point(), v3->point()), v2, v3);
+    dcel.insert_at_vertices(Segment_2(v3->point(), v4->point()), v3, v4);
+    dcel.insert_at_vertices(Segment_2(v4->point(), v1->point()), v4, v1);
+
+    return dcel;
+}
+CGAL::Arrangement_2<CGAL::Arr_segment_traits_2<Kernel>> example_2(){
+    CGAL::Arrangement_2<CGAL::Arr_segment_traits_2<Kernel>> dcel;
+
+    auto v1 = dcel.insert_in_face_interior(Point_2(1.0, 6.0), dcel.unbounded_face());
+    auto v2 = dcel.insert_in_face_interior(Point_2(3.0, 1.0), dcel.unbounded_face());
+    auto v3 = dcel.insert_in_face_interior(Point_2(8.0, 1.0), dcel.unbounded_face());
+    auto v4 = dcel.insert_in_face_interior(Point_2(10.0, 4.0), dcel.unbounded_face());
+    auto v5 = dcel.insert_in_face_interior(Point_2(12.0, 1.0), dcel.unbounded_face());
+    auto v6 = dcel.insert_in_face_interior(Point_2(14.0, 1.0), dcel.unbounded_face());
+    auto v7 = dcel.insert_in_face_interior(Point_2(10.0, 7.0), dcel.unbounded_face());
+    auto v8 = dcel.insert_in_face_interior(Point_2(12.0, 7.0), dcel.unbounded_face());
+    auto v9 = dcel.insert_in_face_interior(Point_2(13.0, 5.0), dcel.unbounded_face());
+    auto v10 = dcel.insert_in_face_interior(Point_2(13.0, 8.0), dcel.unbounded_face());
+    auto v11 = dcel.insert_in_face_interior(Point_2(4.0, 8.0), dcel.unbounded_face());
+
+    dcel.insert_at_vertices(Segment_2(v1->point(), v2->point()), v1, v2);
+    dcel.insert_at_vertices(Segment_2(v2->point(), v3->point()), v2, v3);
+    dcel.insert_at_vertices(Segment_2(v3->point(), v4->point()), v3, v4);
+    dcel.insert_at_vertices(Segment_2(v4->point(), v5->point()), v4, v5);
+    dcel.insert_at_vertices(Segment_2(v5->point(), v6->point()), v5, v6);
+    dcel.insert_at_vertices(Segment_2(v6->point(), v7->point()), v6, v7);
+    dcel.insert_at_vertices(Segment_2(v7->point(), v8->point()), v7, v8);
+    dcel.insert_at_vertices(Segment_2(v8->point(), v9->point()), v8, v9);
+    dcel.insert_at_vertices(Segment_2(v9->point(), v10->point()), v9, v10);
+    dcel.insert_at_vertices(Segment_2(v10->point(),v11->point()), v10, v11);
+    dcel.insert_at_vertices(Segment_2(v11->point(),v1->point()), v11, v1);
+
+    return dcel;
+}
+CGAL::Arrangement_2<CGAL::Arr_segment_traits_2<Kernel>> example_3(){
     CGAL::Arrangement_2<CGAL::Arr_segment_traits_2<Kernel>> dcel;
 
     std::vector<Point_2> boundary_points = {
@@ -536,11 +488,117 @@ int main() {
     dcel.insert_at_vertices(Segment_2(internal_points[2], internal_points[1]), ivh2, ivh1);
     dcel.insert_at_vertices(Segment_2(internal_points[0], internal_points[1]), ivh0, ivh1);
 
-    //print_dcel(dcel);
-    monotone_subdivision(dcel);
-    print_dcel(dcel);
+    return dcel;
+}
 
-    //write_dcel(dcel);
+CGAL::Arrangement_2<CGAL::Arr_segment_traits_2<Kernel>> example_4(){
+    CGAL::Arrangement_2<CGAL::Arr_segment_traits_2<Kernel>> dcel;
+
+    std::array<Point_2, 38> points = {
+        Point_2(0.5, 4.5),
+        Point_2(1.5, 2),
+        Point_2(4.5, 0.5),
+        Point_2(7.25, 1.75),
+        Point_2(6.25, 2.10),
+        Point_2(7.5, 3),
+        Point_2(8.25, 0.5),
+        Point_2(11.5, 1),
+        Point_2(12.6, 4),
+        Point_2(11.5, 5.5),
+        Point_2(7.5, 4.6),
+        Point_2(9.5, 6),
+        Point_2(5.75, 5.5),
+        Point_2(3.5, 6),
+
+        Point_2(1.75, 3.5),
+        Point_2(3, 1.525),
+
+        Point_2(2.6, 3.8),
+        Point_2(3.10, 2.75),
+        Point_2(4.5, 1.5),
+        Point_2(6, 2),
+        Point_2(5.5, 2.6),
+        Point_2(6.5, 3.75),
+        Point_2(8.25, 3.25),
+        Point_2(9.75, 2.15),
+        Point_2(8.8, 3.25),
+        Point_2(9.75, 4.6),
+        Point_2(8.25, 4),
+        Point_2(5.75, 4.75),
+
+        Point_2(10.40, 1.8),
+        Point_2(11.40, 2.8),
+        Point_2(10.75, 3.25),
+        Point_2(11.50, 4),
+        Point_2(10.60, 4.5),
+        Point_2(10.10, 3.25),
+
+        Point_2(9.5, 3.25),
+
+        Point_2(4.20, 4),
+        Point_2(4.5, 2.25),
+        Point_2(6, 3.8)
+
+    };
+
+    std::array<Vertex_handle , points.size()> vertices;
+    for(int i = 0; i < 16; i++) vertices[i] = dcel.insert_in_face_interior(points[i], dcel.unbounded_face());
+
+    //Faccia 1
+    dcel.insert_at_vertices(Segment_2(vertices[0]->point(), vertices[1]->point()), vertices[0], vertices[1]);
+    dcel.insert_at_vertices(Segment_2(vertices[1]->point(), vertices[2]->point()), vertices[1], vertices[2]);
+    dcel.insert_at_vertices(Segment_2(vertices[2]->point(), vertices[15]->point()), vertices[2], vertices[15]);
+    dcel.insert_at_vertices(Segment_2(vertices[15]->point(), vertices[14]->point()), vertices[15], vertices[14]);
+    dcel.insert_at_vertices(Segment_2(vertices[14]->point(), vertices[13]->point()), vertices[14], vertices[13]);
+    dcel.insert_at_vertices(Segment_2(vertices[13]->point(), vertices[0]->point()), vertices[13], vertices[0]);
+
+    //Faccia 2
+    for(int i = 2; i < 13; i++) dcel.insert_at_vertices(Segment_2(vertices[i]->point(), vertices[i+1]->point()), vertices[i], vertices[i+1]);
+
+    auto right_face = ++(++dcel.faces_begin());
+    for(int i = 16; i <= 34; i++) vertices[i] = dcel.insert_in_face_interior(points[i], right_face);
+
+    //Faccia 3
+    for(int i = 16; i < 27; i++) dcel.insert_at_vertices(Segment_2(vertices[i]->point(), vertices[i+1]->point()), vertices[i], vertices[i+1]);
+    dcel.insert_at_vertices(Segment_2(vertices[27]->point(), vertices[16]->point()), vertices[27], vertices[16]);
+
+    //Faccia 4 e 5
+    for(int i = 28; i < 33; i++) dcel.insert_at_vertices(Segment_2(vertices[i]->point(), vertices[i+1]->point()), vertices[i], vertices[i+1]);
+    dcel.insert_at_vertices(Segment_2(vertices[33]->point(), vertices[28]->point()), vertices[33], vertices[28]);
+
+    dcel.insert_at_vertices(Segment_2(vertices[32]->point(), vertices[34]->point()), vertices[32], vertices[34]);
+    dcel.insert_at_vertices(Segment_2(vertices[34]->point(), vertices[28]->point()), vertices[34], vertices[28]);
+
+    auto third_face = (++(++(++dcel.faces_begin())));
+    for(int i = 35; i < points.size(); i++) vertices[i] = dcel.insert_in_face_interior(points[i], third_face);
+    dcel.insert_at_vertices(Segment_2(vertices[35]->point(), vertices[36]->point()), vertices[35], vertices[36]);
+    dcel.insert_at_vertices(Segment_2(vertices[36]->point(), vertices[37]->point()), vertices[36], vertices[37]);
+    dcel.insert_at_vertices(Segment_2(vertices[37]->point(), vertices[35]->point()), vertices[37], vertices[35]);
+
+    return dcel;
+}
+
+int main() {
+
+    CGAL::Arrangement_2<CGAL::Arr_segment_traits_2<Kernel>> dcel_1 = example_1();
+    CGAL::Arrangement_2<CGAL::Arr_segment_traits_2<Kernel>> dcel_2 = example_2();
+    CGAL::Arrangement_2<CGAL::Arr_segment_traits_2<Kernel>> dcel_3 = example_3();
+    CGAL::Arrangement_2<CGAL::Arr_segment_traits_2<Kernel>> dcel_4 = example_4();
+
+    print_dcel(dcel_4);
+    //monotone_subdivision(dcel_1, ++dcel_1.faces_begin()); //example 1
+    //monotone_subdivision(dcel_2, ++dcel_2.faces_begin()); //example 2
+    //monotone_subdivision(dcel_3, ++dcel_3.faces_begin()); //example 3
+    auto f = dcel_4.faces_begin();
+    while(f != dcel_4.faces_end()) {
+        if (f->is_unbounded()) {
+            ++f;
+            continue;
+        }
+        monotone_subdivision(dcel_4, f); //example 4
+        ++f;
+    }
+    print_dcel(dcel_4);
 
     return 0;
 }
