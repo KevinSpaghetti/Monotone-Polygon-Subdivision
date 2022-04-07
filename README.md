@@ -5,3 +5,5 @@ for a planar subdivision.
 
 ![Original](Examples\Original.svg)
 ![Decomposition](Examples\Decomposition.svg)
+
+Requires CGAL to be installed.
