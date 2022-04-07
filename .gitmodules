@@ -1,6 +1,0 @@
-[submodule "libs/cgal"]
-	path = libs/cgal
-	url = https://github.com/CGAL/cgal
-[submodule "libs/boost"]
-	path = libs/boost
-	url = https://github.com/boostorg/boost
